@@ -101,5 +101,21 @@ namespace Tiled2Unity
             return new RectangleFrontierVerticalProxy(new Point(rect.Right + 1, rect.Top), new Point(rect.Right + 1, rect.Bottom));
         }
 
+        public static Point GetBottomPoint(this Rectangle rect)
+        {
+            return new Point(rect.Left, rect.Bottom + 1);
+        }
+        public static Point GetTopPoint(this Rectangle rect)
+        {
+            return new Point(rect.Left, rect.Top - 1);
+        }
+        public static Point GetLeftPoint(this Rectangle rect)
+        {
+            return new Point(rect.Left - 1, rect.Top);
+        }
+        public static Point GetRightPoint(this Rectangle rect)
+        {
+            return new Point(rect.Right + 1, rect.Top);
+        }
     }
 }

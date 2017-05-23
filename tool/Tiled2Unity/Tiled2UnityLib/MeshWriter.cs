@@ -167,10 +167,18 @@ namespace Tiled2Unity
                 // Here's the point where we do the optimization.
                 var singleColorRect = DoSingleColorHeuristic(x, y);
                 var stackingRect = DoStackingHeuristic(x, y);
-                if (singleColorRect.GetClosedArea() < stackingRect.GetClosedArea())
+                var stretchingRect = DoStretchingHeuristic(x, y);
+
+                //Okay this logic is really messy
+                if (singleColorRect.GetClosedArea() < stackingRect.GetClosedArea() && stretchingRect.GetClosedArea() < stackingRect.GetClosedArea())
                 {
                     // Take the stacking rect route
                     CommitStackingHeuristic(x, y, tile, stackingRect, out positions, out texcoords);
+                }
+                else if(singleColorRect.GetClosedArea() < stretchingRect.GetClosedArea())
+                {
+                    // Take the stretching rect route
+                    CommitStretchingHeuristic(x, y, tile, stretchingRect, out positions, out texcoords);
                 }
                 else // singleColorRect.GetArea() >= stackingRect.GetArea() 
                 {
@@ -213,6 +221,25 @@ namespace Tiled2Unity
             {
                 // We found a larger quad.
                 texcoords = CalculateFaceTextureCoordinatesForSingleColorHeuristic(singleColorRect, tile);
+            }
+        }
+
+        private void CommitStretchingHeuristic(int x, int y, TmxTile tile, Rectangle stretchingRect, out FaceVertices positions, out PointF[] texcoords)
+        {
+            var position = Mesh.Layer.Map.GetMapPositionAt(x, y);
+            mTileUsed.Set(stretchingRect, true);
+            stretchingRect.Location = position;
+            var pos2 = CalculateFaceVertices(stretchingRect, tile.TileSize, Mesh.Layer.Map.TileHeight, tile.Offset);
+            positions = new FaceVertices { Vertices = pos2, Depth_z = GetDepthValueAt(position) };
+            if (stretchingRect.Size == Size.Empty)
+            {
+                // We didn't find any larger quad.
+                texcoords = CalculateFaceTextureCoordinates(tile, false, false, false);
+            }
+            else
+            {
+                // We found a larger quad.
+                texcoords = CalculateFaceTextureCoordinatesForStretchingHeuristic(stretchingRect, tile);
             }
         }
 
@@ -454,6 +481,7 @@ namespace Tiled2Unity
                 // check for it in a method up in the call stack.
                 throw new InvalidOperationException("MeshWriter error");
             }
+
             if (startTile.IsSingleColor == false)
             {
                 return;
@@ -541,6 +569,79 @@ namespace Tiled2Unity
                     continueInVertDir = false;
                 }
             }
+        }
+        
+        private Rectangle DoStretchingHeuristic(int x, int y)
+        {
+            var rect = new Rectangle(x, y, 0, 0);
+            DoStretchingHeuristic(ref rect);
+            return rect;
+        }
+
+        private void DoStretchingHeuristic(ref Rectangle rect)
+        {
+            bool flip0, flip1, flip2;
+            bool continueInHorDir = true;
+            bool continueInVertDir = true;
+            int horDir = Mesh.Layer.Map.DrawOrderHorizontal;
+            int verDir = Mesh.Layer.Map.DrawOrderVertical;
+            var startTile = GetTile(rect.Location, out flip0, out flip1, out flip2);
+            if (startTile == null || flip0 || flip1 || flip2)
+            {
+                // This should be impossible because we
+                // check for it in a method up in the call stack.
+                throw new InvalidOperationException("MeshWriter error");
+            }
+
+            Point point = rect.Location;
+
+            bool isHorizontallyStretchable = startTile.IsHorizontallyStretchable;
+            bool isVerticallyStretchable = startTile.IsVerticallyStretchable;
+
+            //don't infringe on Same-Color Heuristic
+            if (isHorizontallyStretchable && isVerticallyStretchable) return;
+
+            if (isHorizontallyStretchable)
+            {
+                while (continueInHorDir)
+                {
+                    continueInHorDir = CheckPointForSameTile(startTile, horDir == 1 ? rect.GetRightPoint() : rect.GetLeftPoint());
+                    
+                    if (continueInHorDir)
+                    {
+                        if (horDir == 1) RectangleUtils.EnlargeRight(ref rect);
+                        else RectangleUtils.EnlargeLeft(ref rect);
+                    }
+
+                    if ((horDir == 1 && rect.Right == Mesh.Layer.Width - 1) ||
+                        (horDir == -1 && rect.Left == 0))
+                    {
+                        // Don't continue or we'll go out-of-bounds.
+                        continueInHorDir = false;
+                    }
+                }
+            }
+            else if(isVerticallyStretchable)
+            {
+                while (continueInVertDir)
+                {
+                    continueInVertDir = CheckPointForSameTile(startTile, verDir == 1 ? rect.GetBottomPoint() : rect.GetTopPoint());
+                    
+                    if (continueInVertDir)
+                    {
+                        if (verDir == 1) RectangleUtils.EnlargeBottom(ref rect);
+                        else RectangleUtils.EnlargeTop(ref rect);
+                    }
+                    
+                    if ((verDir == 1 && rect.Bottom == Mesh.Layer.Height - 1) ||
+                        (verDir == -1 && rect.Top == 0))
+                    {
+                        // Don't continue or we'll go out-of-bounds.
+                        continueInVertDir = false;
+                    }
+                }
+            }
+
         }
 
         private bool CheckFrontierForStacking(ref Rectangle rect, RectangleFrontierHorizontalProxy frontier)
@@ -647,6 +748,23 @@ namespace Tiled2Unity
                     return false;
                 }
             }
+            return true;
+        }
+
+        private bool CheckPointForSameTile(TmxTile sameTile, Point pt)
+        {
+            bool flip0, flip1, flip2;
+
+            if (pt.X >= mTileUsed.Width || pt.Y >= mTileUsed.Height || pt.X < 0 || pt.Y < 0) return false;
+            if (mTileUsed.Get(pt.X, pt.Y)) return false;
+            var tile = GetTile(pt, out flip0, out flip1, out flip2);
+            if (tile == null || flip0 || flip1 || flip2
+                || tile != sameTile
+                )
+            {
+                return false;
+            }
+            
             return true;
         }
 
@@ -760,6 +878,38 @@ namespace Tiled2Unity
             points[1] = TiledMapExporter.PointToTextureCoordinate(imageLocation, imageSize);
             points[0] = TiledMapExporter.PointToTextureCoordinate(imageLocation, imageSize);
             return points;
+        }
+
+        private PointF[] CalculateFaceTextureCoordinatesForStretchingHeuristic(Rectangle rect, TmxTile tile)
+        {
+            Point imageLocation = tile.LocationOnSource;
+            Size tileSize = tile.TileSize;
+
+            Size imageSize = tile.TmxImage.Size;
+
+            var coordinates = CalculateFaceTextureCoordinates(tile, false, false, false);
+            
+            imageLocation.Offset(tileSize.Width / 2, tileSize.Height / 2);
+            PointF center = TiledMapExporter.PointToTextureCoordinate(imageLocation, imageSize);
+
+            if (rect.Width > rect.Height)
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    coordinates[i].X = center.X;
+                    //coordinates[i].Y = center.Y;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    //coordinates[i].X = center.X;
+                    coordinates[i].Y = center.Y;
+                }
+            }
+
+            return coordinates;
         }
 
         private PointF[] CalculateFaceTextureCoordinatesInLayerSpace(TmxTile tile)

@@ -74,6 +74,68 @@ namespace Tiled2Unity
             }
         }
 
+        //Is every column a single color?
+        public bool IsVerticallyStretchable
+        {
+            get
+            {
+                if (IsEmpty) return true;
+                if (TmxImage == null) return true;
+                if (TileSize.Height == 0 || TileSize.Width == 0) return true;
+
+                Color startColor = TopLeftColor;
+                for (int x = 0; x < TileSize.Width; ++x)
+                {
+                    for (int y = 0; y < TileSize.Height; ++y)
+                    {
+                        int xx = x + LocationOnSource.X;
+                        int yy = y + LocationOnSource.Y;
+
+                        if (y == 0)
+                        {
+                            startColor = TmxImage.ImageBitmap.GetPixel(xx, yy);
+                        }
+                        else if (TmxImage.ImageBitmap.GetPixel(xx, yy) != startColor)
+                        {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+
+        //Is every row a single color?
+        public bool IsHorizontallyStretchable
+        {
+            get
+            {
+                if (IsEmpty) return true;
+                if (TmxImage == null) return true;
+                if (TileSize.Height == 0 || TileSize.Width == 0) return true;
+
+                Color startColor = TopLeftColor;
+                for (int y = 0; y < TileSize.Height; ++y)
+                {
+                    for (int x = 0; x < TileSize.Width; ++x)
+                    {
+                        int xx = x + LocationOnSource.X;
+                        int yy = y + LocationOnSource.Y;
+
+                        if (x == 0)
+                        {
+                            startColor = TmxImage.ImageBitmap.GetPixel(xx, yy);
+                        }
+                        else if (TmxImage.ImageBitmap.GetPixel(xx, yy) != startColor)
+                        {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+
         public void SetTileSize(int width, int height)
         {
             this.TileSize = new Size(width, height);
