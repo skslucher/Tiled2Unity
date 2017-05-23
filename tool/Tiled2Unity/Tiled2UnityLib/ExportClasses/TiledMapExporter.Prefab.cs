@@ -521,25 +521,46 @@ namespace Tiled2Unity
             // We combine the properties of the tile that is referenced and add it to our own properties
             AssignTiledProperties(tmxObjectTile.Tile, xmlTileObjectRoot);
 
+
+
             // TileObjects can be scaled (this is separate from vertex scaling)
             SizeF scale = tmxObjectTile.GetTileObjectScale();
             xmlTileObjectRoot.SetAttributeValue("scaleX", scale.Width);
             xmlTileObjectRoot.SetAttributeValue("scaleY", scale.Height);
 
+            // Flipping is done through negative-scaling on the child object
+            float flip_w = tmxObjectTile.FlippedHorizontal ? -1.0f : 1.0f;
+            float flip_h = tmxObjectTile.FlippedVertical ? -1.0f : 1.0f;
+
+            // Helper values for moving tile about local origin
+            float full_w = tmxObjectTile.Tile.TileSize.Width;
+            float full_h = tmxObjectTile.Tile.TileSize.Height;
+            float half_w = full_w * 0.5f;
+            float half_h = full_h * 0.5f;
+
             // Need another transform to help us with flipping of the tile (and their collisions)
             XElement xmlTileObject = new XElement("GameObject");
             xmlTileObject.SetAttributeValue("name", "TileObject");
 
-            if (tmxObjectTile.FlippedHorizontal)
+            xmlTileObject.SetAttributeValue("x", half_w * Tiled2Unity.Settings.Scale * (1f - flip_w));
+            xmlTileObject.SetAttributeValue("y", half_h * Tiled2Unity.Settings.Scale * (1f - flip_h));
+            
+            xmlTileObject.SetAttributeValue("scaleX", flip_w);
+            xmlTileObject.SetAttributeValue("scaleY", flip_h);
+
+
+            /*if (tmxObjectTile.FlippedHorizontal)
             {
                 xmlTileObject.SetAttributeValue("x", tmxObjectTile.Tile.TileSize.Width * Tiled2Unity.Settings.Scale);
+                xmlTileObject.SetAttributeValue("scaleX", tmxObjectTile.Tile.TileSize.Width * Tiled2Unity.Settings.Scale);
                 xmlTileObject.SetAttributeValue("flipX", true);
             }
             if (tmxObjectTile.FlippedVertical)
             {
                 xmlTileObject.SetAttributeValue("y", tmxObjectTile.Tile.TileSize.Height * Tiled2Unity.Settings.Scale);
+                xmlTileObject.SetAttributeValue("scaleY", tmxObjectTile.Tile.TileSize.Height * Tiled2Unity.Settings.Scale);
                 xmlTileObject.SetAttributeValue("flipY", true);
-            }
+            }*/
 
             // Add any colliders that might be on the tile
             // Note: Colliders on a tile object are always treated as if they are in Orthogonal space
