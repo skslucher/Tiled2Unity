@@ -40,6 +40,8 @@ namespace Tiled2Unity
 
         private BitPlane mTileUsed = null;
 
+        private string meshType = "default";
+
         #endregion // Datamembers
 
         #region Public methods
@@ -63,7 +65,7 @@ namespace Tiled2Unity
         /// </summary>
         public void Execute()
         {
-            if (Mesh == null || 
+            if (Mesh == null ||
                 Builder == null ||
                 PositionDatabase == null ||
                 TexcoordDatabase == null)
@@ -77,38 +79,149 @@ namespace Tiled2Unity
             //var uvDatabase = new HashIndexOf<PointF>();
             float mapLogicalHeight = map.MapSizeInPixels().Height;
             mTileUsed = new BitPlane(layer.Width, layer.Height);
-            
+
             var verticalRange = (map.DrawOrderVertical == 1) ? Enumerable.Range(0, layer.Height) : Enumerable.Range(0, layer.Height).Reverse();
             var horizontalRange = (map.DrawOrderHorizontal == 1) ? Enumerable.Range(0, layer.Width) : Enumerable.Range(0, layer.Width).Reverse();
 
             Logger.WriteLine("Writing '{0}' mesh group", Mesh.UniqueMeshName);
             Builder.AppendFormat("\ng {0}\n", Mesh.UniqueMeshName);
 
+
+
+            //string meshType = "default";
+
+            //Detect custom MeshType property for Tileset
+            ////...is there really no "Tileset" parent to hold these?
+            foreach (uint tileId in Mesh.TileIds)
+            {
+                // Skip blank tiles
+                if (tileId == 0)
+                {
+                    continue;
+                }
+                var tile = map.Tiles[TmxMath.GetTileIdWithoutFlags(tileId)];
+
+                if (tile == null)
+                {
+                    continue;
+                }
+
+                meshType = tile.Properties.GetPropertyValueAsString("MeshType", "default");
+                if (meshType != "default")
+                {
+                    Logger.WriteLine("MeshType {0} detected", meshType);
+                    break;
+                }
+            }
+
             FaceVertices faceVertices;
             PointF[] uvs;
 
-            foreach (int y in verticalRange)
+            switch (meshType)
             {
-                OnProgressChanged(y / layer.Height);
-                foreach (int x in horizontalRange)
-                {
-                    if (!DetermineQuad(x, y, out faceVertices, out uvs))
+                case "Regional":
+
+                    Logger.WriteLine("Processing mesh {0} as regional", Mesh.UniqueMeshName);
+
+                    layerBrightness = float.Parse(layer.Properties.GetPropertyValueAsString("region:brightness", "0.0"));
+                    isBrightnessReversed = bool.Parse(layer.Properties.GetPropertyValueAsString("region:reversed", "False"));
+
+                    Logger.WriteLine("Mesh {0} brightness: {1}  reversed: {2}", Mesh.UniqueMeshName, layerBrightness, isBrightnessReversed);
+
+                    foreach (int y in verticalRange)
                     {
-                        continue;
+                        OnProgressChanged(y / layer.Height);
+                        foreach (int x in horizontalRange)
+                        {
+                            if (!DetermineQuad(x, y, out faceVertices, out uvs))
+                            {
+                                continue;
+                            }
+
+                            int tileIndex = Mesh.Layer.GetTileIndex(x, y);
+                            uint tileId = Mesh.GetTileIdAt(tileIndex);
+                            TmxTile tile = Mesh.Layer.Map.Tiles[TmxMath.GetTileIdWithoutFlags(tileId)];
+
+                            if(layerBrightness == 0f)
+                            {
+                                layerBrightness = float.Parse(tile.Properties.GetPropertyValueAsString("region:brightness", "0.0"));
+                            }
+                            if (!isBrightnessReversed)
+                            {
+                                isBrightnessReversed = bool.Parse(tile.Properties.GetPropertyValueAsString("region:reversed", "False"));
+                            }
+
+
+                            EncodeUVs(ref uvs);
+
+                            //{
+                            //    int tileIndex = Mesh.Layer.GetTileIndex(x, y);
+                            //    uint tileId = Mesh.GetTileIdAt(tileIndex);
+                            //    TmxTile tile = Mesh.Layer.Map.Tiles[TmxMath.GetTileIdWithoutFlags(tileId)];
+
+                            //    float extendEdge = float.Parse(tile.Properties.GetPropertyValueAsString("ExtendEdge", "0"));
+
+                            //    if(extendEdge > 0f)
+                            //    {
+
+                            //    }
+
+                            //}
+
+                            SplitEdges splitEdges;
+                            DetectEdges(x, y, ref faceVertices, ref uvs, out splitEdges);
+
+
+
+                            if (splitEdges.isSplit)
+                            {
+                                Vertex3 centerVertex = Vertex3.Average(faceVertices.V0, faceVertices.V2);
+
+                                AddSplitEdge(faceVertices.V0, uvs[0], faceVertices.V1, uvs[1], centerVertex, splitEdges.top);
+                                AddSplitEdge(faceVertices.V1, uvs[1], faceVertices.V2, uvs[2], centerVertex, splitEdges.right);
+                                AddSplitEdge(faceVertices.V2, uvs[2], faceVertices.V3, uvs[3], centerVertex, splitEdges.bottom);
+                                AddSplitEdge(faceVertices.V3, uvs[3], faceVertices.V0, uvs[0], centerVertex, splitEdges.left);
+                            }
+                            else
+                            {
+                                // Adds vertices and uvs to the database as we build the face strings
+                                string v0 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V0) + 1, TexcoordDatabase.Add(uvs[0]) + 1);
+                                string v1 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V1) + 1, TexcoordDatabase.Add(uvs[1]) + 1);
+                                string v2 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V2) + 1, TexcoordDatabase.Add(uvs[2]) + 1);
+                                string v3 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V3) + 1, TexcoordDatabase.Add(uvs[3]) + 1);
+                                Builder.AppendFormat("f {0} {1} {2} {3}\n", v0, v1, v2, v3);
+                            }
+                        }
                     }
 
-                    // Adds vertices and uvs to the database as we build the face strings
-                    string v0 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V0) + 1, TexcoordDatabase.Add(uvs[0]) + 1);
-                    string v1 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V1) + 1, TexcoordDatabase.Add(uvs[1]) + 1);
-                    string v2 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V2) + 1, TexcoordDatabase.Add(uvs[2]) + 1);
-                    string v3 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V3) + 1, TexcoordDatabase.Add(uvs[3]) + 1);
-                    Builder.AppendFormat("f {0} {1} {2} {3}\n", v0, v1, v2, v3);
-                }
+                    break;
+
+                default: //Standard behavior
+
+                    foreach (int y in verticalRange)
+                    {
+                        OnProgressChanged(y / layer.Height);
+                        foreach (int x in horizontalRange)
+                        {
+                            if (!DetermineQuad(x, y, out faceVertices, out uvs))
+                            {
+                                continue;
+                            }
+
+                            // Adds vertices and uvs to the database as we build the face strings
+                            string v0 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V0) + 1, TexcoordDatabase.Add(uvs[0]) + 1);
+                            string v1 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V1) + 1, TexcoordDatabase.Add(uvs[1]) + 1);
+                            string v2 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V2) + 1, TexcoordDatabase.Add(uvs[2]) + 1);
+                            string v3 = String.Format("{0}/{1}/1", PositionDatabase.Add(faceVertices.V3) + 1, TexcoordDatabase.Add(uvs[3]) + 1);
+                            Builder.AppendFormat("f {0} {1} {2} {3}\n", v0, v1, v2, v3);
+                        }
+                    }
+                    break;
             }
         }
 
         #endregion // Public methods
-
+        
         #region Helper methods
 
         protected void OnProgressChanged(int percentage)
@@ -148,8 +261,19 @@ namespace Tiled2Unity
                 texcoords = null;
                 return false;
             }
-            else if (flipDiagonal || flipHorizontal || flipVertical || 
-                Mesh.Layer.Map.Orientation != TmxMap.MapOrientation.Orthogonal)
+
+            //string ignore = tile.Properties.GetPropertyValueAsString("unity:ignore", "none");
+
+            //if(ignore == "all" || ignore == "visual")
+            //{
+            //    positions = new FaceVertices { };
+            //    texcoords = null;
+            //    return false;
+            //}
+
+
+            if (flipDiagonal || flipHorizontal || flipVertical || 
+                Mesh.Layer.Map.Orientation != TmxMap.MapOrientation.Orthogonal || meshType != "default")
             {
                 // The tile has a non-trivial rotation matrix, or the map is not orthogonal,
                 // so we're not gonna do our optimizations. Export this as a single tile.
@@ -161,7 +285,8 @@ namespace Tiled2Unity
 
                 return true;
             }
-            else
+            
+            //else
             {
                 // No null tile, unflipped in any possible direction.
                 // Here's the point where we do the optimization.
@@ -973,5 +1098,202 @@ namespace Tiled2Unity
         }
 
         #endregion // Helper methods
+
+        #region Regional helper methods
+        
+        private void EncodeUVs(ref PointF[] texcoords)
+        {
+            PointF uv = texcoords[0];
+
+            float tileSize = Mesh.Layer.Map.TileWidth;
+            float tilesetSize = Mesh.TmxImage.Size.Width / tileSize;
+
+            //float tileUvSize = Mesh.Layer.Map.TileWidth / Mesh.TmxImage.Size.Width;
+            float tileUvSize = .125f;
+
+            uv.X -= (uv.X % tileUvSize);
+            uv.Y -= (uv.Y % tileUvSize);
+
+            uv.Y += uv.X / 8f;
+
+            for (int i = 0; i < texcoords.Length; i++)
+            {
+                texcoords[i] = uv;
+            }
+        }
+
+        const float maxBrightness = 1.0f;
+        const float minBrightness = 0.0f;
+        float layerBrightness = minBrightness;
+        bool isBrightnessReversed = false;
+
+
+        struct SplitEdges
+        {
+            public bool isSplit;
+            public bool top;
+            public bool bottom;
+            public bool left;
+            public bool right;
+            public bool this[int index]
+            {
+                get
+                {
+                    switch (index)
+                    {
+                        case 0: return top;
+                        case 1: return right;
+                        case 2: return bottom;
+                        case 3: return left;
+
+                        default: return false;
+                    }
+                }
+            }
+        }
+
+        private void DetectEdges(int x, int y, ref FaceVertices faceVertices, ref PointF[] texcoords, out SplitEdges splitEdges)
+        {
+            splitEdges = new SplitEdges();
+            splitEdges.isSplit = false;
+            splitEdges.top = splitEdges.bottom = splitEdges.right = splitEdges.left = false;
+
+            //is this corner an edge
+            bool topRight, topLeft, bottomRight, bottomLeft;
+            
+            topRight = !HasTileAt(x, y + 1) || !HasTileAt(x + 1, y + 1) || !HasTileAt(x + 1, y);
+            topLeft = !HasTileAt(x, y + 1) || !HasTileAt(x - 1, y + 1) || !HasTileAt(x - 1, y);
+            bottomRight = !HasTileAt(x, y - 1) || !HasTileAt(x + 1, y - 1) || !HasTileAt(x + 1, y);
+            bottomLeft = !HasTileAt(x, y - 1) || !HasTileAt(x - 1, y - 1) || !HasTileAt(x - 1, y);
+
+            //texcoords[0].X = (topLeft != isBrightnessReversed ? maxBrightness : layerBrightness);
+            //texcoords[1].X = (topRight != isBrightnessReversed ? maxBrightness : layerBrightness);
+            //texcoords[2].X = (bottomRight != isBrightnessReversed ? maxBrightness : layerBrightness);
+            //texcoords[3].X = (bottomLeft != isBrightnessReversed ? maxBrightness : layerBrightness);
+
+            if (!isBrightnessReversed)
+            {
+                texcoords[0].X = (topLeft ? maxBrightness : layerBrightness);
+                texcoords[1].X = (topRight ? maxBrightness : layerBrightness);
+                texcoords[2].X = (bottomRight ? maxBrightness : layerBrightness);
+                texcoords[3].X = (bottomLeft ? maxBrightness : layerBrightness);
+            }
+            else
+            {
+                texcoords[0].X = (topLeft ? layerBrightness : maxBrightness - 0.0625f);
+                texcoords[1].X = (topRight ? layerBrightness : maxBrightness - 0.0625f);
+                texcoords[2].X = (bottomRight ? layerBrightness : maxBrightness - 0.0625f);
+                texcoords[3].X = (bottomLeft ? layerBrightness : maxBrightness - 0.0625f);
+            }
+
+
+
+            if(topRight && topLeft && HasTileAt(x, y + 1))
+            {
+                splitEdges.isSplit = splitEdges.top = true;
+            }
+            if (topRight && bottomRight && HasTileAt(x + 1, y))
+            {
+                splitEdges.isSplit = splitEdges.right = true;
+            }
+            if (bottomLeft && bottomRight && HasTileAt(x, y - 1))
+            {
+                splitEdges.isSplit = splitEdges.bottom = true;
+            }
+            if (bottomLeft && topLeft && HasTileAt(x - 1, y))
+            {
+                splitEdges.isSplit = splitEdges.left = true;
+            }
+
+            //if(topLeft && topRight && bottomLeft && bottomRight)
+            if((topLeft == bottomRight) && (topRight == bottomLeft) && (topLeft || topRight))
+            {
+                splitEdges.isSplit = true;
+            }
+
+
+            //Bad corner- rotate quad to change triangle orientation
+            //if (!splitEdges.isSplit 
+            //    && (isBrightnessReversed != (topLeft == bottomRight && topRight != bottomLeft))
+            //    )
+
+            if (!splitEdges.isSplit)
+            {
+                bool shouldRotate = false;
+
+                shouldRotate = (topLeft == bottomRight && topRight != bottomLeft);
+
+                if (isBrightnessReversed)
+                {
+                    if((topLeft && bottomRight) || (topRight && bottomLeft))
+                    {
+                        shouldRotate = !shouldRotate;
+                    }
+                }
+
+                if (shouldRotate)
+                {
+                    RotatePoints(faceVertices.Vertices);
+                    RotatePoints(texcoords);
+                }
+            }
+
+        }
+
+        private void RotatePoints(PointF[] points)
+        {
+            var temp = points[3];
+
+            points[3] = points[2];
+            points[2] = points[1];
+            points[1] = points[0];
+            points[0] = temp;
+        }
+
+        private bool HasTileAt(int x, int y)
+        {
+            if (x > Mesh.Layer.Width - 2) x = Mesh.Layer.Width - 2;
+            else if (x < 1) x = 1;
+
+            if (y > Mesh.Layer.Height - 2) y = Mesh.Layer.Height - 2;
+            else if (y < 1) y = 1;
+
+            //if (x < 0 || x >= Mesh.Layer.Width || y < 0 || y >= Mesh.Layer.Height) return false;
+
+            int tileIndex = Mesh.Layer.GetTileIndex(x, y);
+            uint tileId = Mesh.GetTileIdAt(tileIndex);
+
+            return (tileId != 0);
+        }
+
+        private void WriteTriangle(Vertex3 vert0, Vertex3 vert1, Vertex3 vert2, PointF uv0, PointF uv1, PointF uv2)
+        {
+            string v0 = String.Format("{0}/{1}/1", PositionDatabase.Add(vert0) + 1, TexcoordDatabase.Add(uv0) + 1);
+            string v1 = String.Format("{0}/{1}/1", PositionDatabase.Add(vert1) + 1, TexcoordDatabase.Add(uv1) + 1);
+            string v2 = String.Format("{0}/{1}/1", PositionDatabase.Add(vert2) + 1, TexcoordDatabase.Add(uv2) + 1);
+            Builder.AppendFormat("f {0} {1} {2}\n", v0, v1, v2);
+        }
+
+        private void AddSplitEdge(Vertex3 leftVertex, PointF leftUV, Vertex3 rightVertex, PointF rightUV, Vertex3 center, bool isSplit)
+        {
+            PointF halfUV = new PointF((layerBrightness + maxBrightness) * 0.5f, leftUV.Y);
+
+            if (isSplit)
+            {
+                Vertex3 split = Vertex3.Average(leftVertex, rightVertex);
+
+                WriteTriangle(center, leftVertex, split, halfUV, leftUV, halfUV);
+                WriteTriangle(center, split, rightVertex, halfUV, halfUV, rightUV);
+
+            }
+            else
+            {
+                WriteTriangle(center, leftVertex, rightVertex, halfUV, leftUV, rightUV);
+            }
+
+        }
+
+        #endregion //Regional helper methods
+
     }
 }
