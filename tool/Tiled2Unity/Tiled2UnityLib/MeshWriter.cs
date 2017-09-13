@@ -1142,11 +1142,6 @@ namespace Tiled2Unity
             bottomRight = !HasTileAt(x, y - 1) || !HasTileAt(x + 1, y - 1) || !HasTileAt(x + 1, y);
             bottomLeft = !HasTileAt(x, y - 1) || !HasTileAt(x - 1, y - 1) || !HasTileAt(x - 1, y);
 
-            //texcoords[0].X = (topLeft != isBrightnessReversed ? maxBrightness : layerBrightness);
-            //texcoords[1].X = (topRight != isBrightnessReversed ? maxBrightness : layerBrightness);
-            //texcoords[2].X = (bottomRight != isBrightnessReversed ? maxBrightness : layerBrightness);
-            //texcoords[3].X = (bottomLeft != isBrightnessReversed ? maxBrightness : layerBrightness);
-
             if (!isBrightnessReversed)
             {
                 texcoords[0].X = (topLeft ? edgeBrightness : centerBrightness);
@@ -1161,8 +1156,6 @@ namespace Tiled2Unity
                 texcoords[2].X = (bottomRight ? centerBrightness : edgeBrightness - 0.0625f);
                 texcoords[3].X = (bottomLeft ? centerBrightness : edgeBrightness - 0.0625f);
             }
-
-
 
             if(topRight && topLeft && HasTileAt(x, y + 1))
             {
@@ -1181,17 +1174,11 @@ namespace Tiled2Unity
                 splitEdges.isSplit = splitEdges.left = true;
             }
 
-            //if(topLeft && topRight && bottomLeft && bottomRight)
             if((topLeft == bottomRight) && (topRight == bottomLeft) && (topLeft || topRight))
             {
                 splitEdges.isSplit = true;
             }
 
-
-            //Bad corner- rotate quad to change triangle orientation
-            //if (!splitEdges.isSplit 
-            //    && (isBrightnessReversed != (topLeft == bottomRight && topRight != bottomLeft))
-            //    )
 
             if (!splitEdges.isSplit)
             {
