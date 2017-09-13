@@ -123,6 +123,8 @@ namespace Tiled2Unity
                         {
                             var collisionElements = CreateCollisionElementForLayer(collisionLayer);
                             layerElement.Add(collisionElements);
+                            AssignUnityProperties(collisionLayer, collisionElements, PrefabContext.TiledLayer);
+                            AssignTiledProperties(collisionLayer, collisionElements);
                         }
                     }
 
