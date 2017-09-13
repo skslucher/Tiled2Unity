@@ -123,11 +123,6 @@ namespace Tiled2Unity
 
                     Logger.WriteLine("Processing mesh {0} as regional", Mesh.UniqueMeshName);
 
-                    layerBrightness = float.Parse(layer.Properties.GetPropertyValueAsString("region:brightness", "0.0"));
-                    isBrightnessReversed = bool.Parse(layer.Properties.GetPropertyValueAsString("region:reversed", "False"));
-
-                    Logger.WriteLine("Mesh {0} brightness: {1}  reversed: {2}", Mesh.UniqueMeshName, layerBrightness, isBrightnessReversed);
-
                     foreach (int y in verticalRange)
                     {
                         OnProgressChanged(y / layer.Height);
@@ -142,36 +137,16 @@ namespace Tiled2Unity
                             uint tileId = Mesh.GetTileIdAt(tileIndex);
                             TmxTile tile = Mesh.Layer.Map.Tiles[TmxMath.GetTileIdWithoutFlags(tileId)];
 
-                            if(layerBrightness == 0f)
-                            {
-                                layerBrightness = float.Parse(tile.Properties.GetPropertyValueAsString("region:brightness", "0.0"));
-                            }
-                            if (!isBrightnessReversed)
-                            {
-                                isBrightnessReversed = bool.Parse(tile.Properties.GetPropertyValueAsString("region:reversed", "False"));
-                            }
+
+                            edgeBrightness = float.Parse(tile.Properties.GetPropertyValueAsString("region:edge", maxBrightness.ToString()));
+                            centerBrightness = float.Parse(tile.Properties.GetPropertyValueAsString("region:center", minBrightness.ToString()));
+                            isBrightnessReversed = bool.Parse(tile.Properties.GetPropertyValueAsString("region:reversed", "False"));
 
 
                             EncodeUVs(ref uvs);
-
-                            //{
-                            //    int tileIndex = Mesh.Layer.GetTileIndex(x, y);
-                            //    uint tileId = Mesh.GetTileIdAt(tileIndex);
-                            //    TmxTile tile = Mesh.Layer.Map.Tiles[TmxMath.GetTileIdWithoutFlags(tileId)];
-
-                            //    float extendEdge = float.Parse(tile.Properties.GetPropertyValueAsString("ExtendEdge", "0"));
-
-                            //    if(extendEdge > 0f)
-                            //    {
-
-                            //    }
-
-                            //}
-
+                            
                             SplitEdges splitEdges;
                             DetectEdges(x, y, ref faceVertices, ref uvs, out splitEdges);
-
-
 
                             if (splitEdges.isSplit)
                             {
@@ -1124,7 +1099,8 @@ namespace Tiled2Unity
 
         const float maxBrightness = 1.0f;
         const float minBrightness = 0.0f;
-        float layerBrightness = minBrightness;
+        float edgeBrightness = maxBrightness;
+        float centerBrightness = minBrightness;
         bool isBrightnessReversed = false;
 
 
@@ -1173,17 +1149,17 @@ namespace Tiled2Unity
 
             if (!isBrightnessReversed)
             {
-                texcoords[0].X = (topLeft ? maxBrightness : layerBrightness);
-                texcoords[1].X = (topRight ? maxBrightness : layerBrightness);
-                texcoords[2].X = (bottomRight ? maxBrightness : layerBrightness);
-                texcoords[3].X = (bottomLeft ? maxBrightness : layerBrightness);
+                texcoords[0].X = (topLeft ? edgeBrightness : centerBrightness);
+                texcoords[1].X = (topRight ? edgeBrightness : centerBrightness);
+                texcoords[2].X = (bottomRight ? edgeBrightness : centerBrightness);
+                texcoords[3].X = (bottomLeft ? edgeBrightness : centerBrightness);
             }
             else
             {
-                texcoords[0].X = (topLeft ? layerBrightness : maxBrightness - 0.0625f);
-                texcoords[1].X = (topRight ? layerBrightness : maxBrightness - 0.0625f);
-                texcoords[2].X = (bottomRight ? layerBrightness : maxBrightness - 0.0625f);
-                texcoords[3].X = (bottomLeft ? layerBrightness : maxBrightness - 0.0625f);
+                texcoords[0].X = (topLeft ? centerBrightness : edgeBrightness - 0.0625f);
+                texcoords[1].X = (topRight ? centerBrightness : edgeBrightness - 0.0625f);
+                texcoords[2].X = (bottomRight ? centerBrightness : edgeBrightness - 0.0625f);
+                texcoords[3].X = (bottomLeft ? centerBrightness : edgeBrightness - 0.0625f);
             }
 
 
@@ -1276,7 +1252,7 @@ namespace Tiled2Unity
 
         private void AddSplitEdge(Vertex3 leftVertex, PointF leftUV, Vertex3 rightVertex, PointF rightUV, Vertex3 center, bool isSplit)
         {
-            PointF halfUV = new PointF((layerBrightness + maxBrightness) * 0.5f, leftUV.Y);
+            PointF halfUV = new PointF((centerBrightness + edgeBrightness) * 0.5f, leftUV.Y);
 
             if (isSplit)
             {
